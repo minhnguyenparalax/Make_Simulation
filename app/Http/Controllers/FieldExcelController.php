@@ -33,15 +33,21 @@ class FieldExcelController extends Controller
             $highestColumn = $worksheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
+            // Lấy header (row 1)
             $fields = [];
             for ($col = 1; $col <= $highestColumnIndex; $col++) {
                 $cell = $worksheet->getCellByColumnAndRow($col, 1);
                 $value = $cell->getCalculatedValue();
                 if ($value !== null && trim($value) !== '') {
-                    $fields[] = $value;
+                    $fields[] = (string) $value; // Chuyển thành chuỗi để tránh lỗi
                 }
             }
 
+            if (empty($fields)) {
+                return redirect()->route('file.index')->with('error', 'Không tìm thấy trường nào trong hàng đầu tiên của sheet.');
+            }
+
+            // Lưu fields vào session
             $sheetFields = session('sheet_fields', []);
             $sheetFields[$fileIndex][$sheetIndex] = [
                 'sheet_name' => $sheetNames[$sheetIndex],
@@ -51,9 +57,12 @@ class FieldExcelController extends Controller
 
             return redirect()->route('file.index')->with('success', 'Đã lấy danh sách trường của sheet "' . $sheetNames[$sheetIndex] . '" thành công.');
 
-        } catch (\Exception $e) {
+        } catch (\PhpOffice\PhpSpreadsheet\Reader\Exception $e) {
             Log::error('Lỗi khi đọc trường: ' . $e->getMessage());
-            return redirect()->route('file.index')->with('error', 'Không thể đọc trường: ' . $e->getMessage());
+            return redirect()->route('file.index')->with('error', 'Không thể đọc trường: Định dạng sai hoặc sheet hỏng.');
+        } catch (\Exception $e) {
+            Log::error('Lỗi hệ thống: ' . $e->getMessage());
+            return redirect()->route('file.index')->with('error', 'Lỗi không xác định: ' . $e->getMessage());
         }
     }
 

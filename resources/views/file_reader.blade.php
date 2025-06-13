@@ -41,7 +41,6 @@
         .doc-item .delete-form { margin-left: auto; }
         .sheet-name, .doc-name { flex: 1; }
         .fields-table { margin-top: 0.8rem; font-size: 0.85rem; width: 100%; }
-        .fields-table th { background-color: #e9ecef; white-space: nowrap; padding: 0.4rem; }
         .fields-scroll { overflow-x: auto; overflow-y: auto; max-height: 150px; margin-bottom: 0.8rem; }
         .variables-list { margin-top: 0.8rem; padding-left: 0.8rem; }
         .variables-scroll { overflow-y: auto; max-height: 400px; margin-bottom: 0.8rem; }
@@ -136,10 +135,10 @@
                                                     <li class="sheet-item">
                                                         <div class="sheet-actions">
                                                             <form action="{{ route('excel.readSheet', [$fileIndex, $sheetIndex]) }}" method="GET" class="d-inline">
-                                                                <button type="submit" class="eye-btn"><i class="bi bi-eye"></i></button>
+                                                                <button type="submit" class="eye-btn" title="Kiểm tra"><i class="bi bi-eye"></i></button>
                                                             </form>
                                                             <form action="{{ route('excel.fields', [$fileIndex, $sheetIndex]) }}" method="GET" class="d-inline">
-                                                                <button type="submit" class="map-btn"><i class="bi bi-diagram-3"></i></button>
+                                                                <button type="submit" class="map-btn" title="Chuẩn bị mapping"><i class="bi bi-diagram-3"></i></button>
                                                             </form>
                                                         </div>
                                                         <span class="sheet-name {{ isset($currentFileIndex) && isset($currentSheetIndex) && $currentFileIndex == $fileIndex && $currentSheetIndex == $sheetIndex ? 'fw-bold' : '' }}">
@@ -176,6 +175,9 @@
                                                         @foreach ($sheetData['fields'] as $field)
                                                             <th>{{ $field }}</th>
                                                         @endforeach
+                                                        @if (empty($sheetData['fields']))
+                                                            <th>Chưa có trường nào</th>
+                                                        @endif
                                                     </tr>
                                                 </thead>
                                             </table>
@@ -251,14 +253,13 @@
                                                           isset($mapping['doc_index']) &&
                                                           isset($mapping['variable']) &&
                                                           isset($excelFiles[$mapping['field']['file_index']]['name']) &&
-                                                          isset($docFiles[$mapping['doc_index']]['name']) &&
-                                                          isset(session('sheet_fields')[$mapping['field']['file_index']][$mapping['field']['sheet_index']]['sheet_name']);
+                                                          isset($docFiles[$mapping['doc_index']]['name']);
                                     @endphp
                                     @if ($isValidMapping)
                                         <div class="mapping-item">
                                             <strong>{{ $index + 1 }}. </strong>
                                             <div class="mapping-file-info">
-                                                ({{ $excelFiles[$mapping['field']['file_index']]['name'] }}/{{ session('sheet_fields')[$mapping['field']['file_index']][$mapping['field']['sheet_index']]['sheet_name'] }}) ->
+                                                ({{ $excelFiles[$mapping['field']['file_index']]['name'] }}/Sheet {{ $mapping['field']['sheet_index'] + 1 }}) ->
                                                 ({{ $docFiles[$mapping['doc_index']]['name'] }})
                                             </div>
                                             <div>
@@ -318,7 +319,6 @@
                                                                         </li>
                                                                         @foreach ($sFields['fields'] as $field)
                                                                             @php
-                                                                                // Chỉ vô hiệu hóa trường nếu nó đã được mapping trong cùng doc_index
                                                                                 $isFieldUsed = collect($mappings)->contains(fn($m) => 
                                                                                     $m['doc_index'] == $dIndex && 
                                                                                     $m['field']['file_index'] == $fIndex && 
@@ -342,6 +342,8 @@
                                                                         @endforeach
                                                                     @endforeach
                                                                 @endforeach
+                                                            @else
+                                                                <li class="dropdown-item disabled">Chưa có trường nào để mapping</li>
                                                             @endif
                                                         </ul>
                                                     </div>

@@ -20,25 +20,17 @@ class FieldMappingController extends Controller
         $variable = $request->input('variable');
         $fileIndex = $request->input('file_index');
         $sheetIndex = $request->input('sheet_index');
-        $field = $request->input('field');
+        $field = trim($request->input('field')); // Loại bỏ khoảng trắng thừa
 
         $docFiles = session('doc_files', []);
         $excelFiles = session('excel_files', []);
-        $sheetFields = session('sheet_fields', []);
 
-        // Kiểm tra file và sheet tồn tại
+        // Kiểm tra file tồn tại
         if (!isset($docFiles[$docIndex])) {
             return redirect()->back()->with('error', 'File Doc không tồn tại.');
         }
         if (!isset($excelFiles[$fileIndex])) {
             return redirect()->back()->with('error', 'File Excel không tồn tại.');
-        }
-        if (!isset($sheetFields[$fileIndex][$sheetIndex])) {
-            return redirect()->back()->with('error', 'Danh sách trường của sheet không tồn tại.');
-        }
-        // Kiểm tra field tồn tại trong danh sách trường
-        if (!in_array($field, $sheetFields[$fileIndex][$sheetIndex]['fields'])) {
-            return redirect()->back()->with('error', 'Trường "' . $field . '" không tồn tại trong sheet.');
         }
 
         $mappings = session('mappings', []);
@@ -47,6 +39,15 @@ class FieldMappingController extends Controller
         foreach ($mappings as $mapping) {
             if ($mapping['doc_index'] == $docIndex && $mapping['variable'] == $variable) {
                 return redirect()->back()->with('error', 'Biến "' . $variable . '" đã được mapping trong báo cáo "' . $docFiles[$docIndex]['name'] . '".');
+            }
+            // Kiểm tra trường đã được mapping trong cùng doc_index
+            if (
+                $mapping['doc_index'] == $docIndex &&
+                $mapping['field']['file_index'] == $fileIndex && 
+                $mapping['field']['sheet_index'] == $sheetIndex && 
+                $mapping['field']['field'] == $field
+            ) {
+                return redirect()->back()->with('error', 'Trường "' . $field . '" đã được mapping trong báo cáo "' . $docFiles[$docIndex]['name'] . '".');
             }
         }
 
