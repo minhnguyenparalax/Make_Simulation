@@ -62,7 +62,7 @@
         .excel-header { display: flex; align-items: center; gap: 0.4rem; }
         .variable-item { display: flex; align-items: center; gap: 0.4rem; }
         .dropdown-menu {
-            max-height: 300px; overflow-y: auto; width: 300px; font-size: 0.6rem;
+            max-height: 300px; overflow-y: auto; width: 300px; font-size: 0.85rem;
         }
         .dropdown-item { padding: 0.4rem 1rem; }
         .dropdown-header { font-weight: bold; color: #343a40; background-color: #e9ecef; padding: 0.5rem 1rem; }
@@ -75,6 +75,30 @@
 </head>
 <body>
     <div class="container mt-4">
+        <!-- Debug Data (có thể xóa sau khi debug xong) -->
+        @if (false)
+            @if (!empty($excelFiles))
+                <pre>Excel Files: {{ print_r($excelFiles, true) }}</pre>
+            @else
+                <p class="text-warning">Không có file Excel nào.</p>
+            @endif
+            @if (session('sheet_fields'))
+                <pre>Sheet Fields: {{ print_r(session('sheet_fields'), true) }}</pre>
+            @else
+                <p class="text-warning">Không có dữ liệu sheet_fields trong session.</p>
+            @endif
+            @if (session('mappings'))
+                <pre>Mappings: {{ print_r(session('mappings'), true) }}</pre>
+            @else
+                <p class="text-warning">Không có mappings trong session.</p>
+            @endif
+            @if (!empty($docFiles))
+                <pre>Doc Files: {{ print_r($docFiles, true) }}</pre>
+            @else
+                <p class="text-warning">Không có file Doc nào.</p>
+            @endif
+        @endif
+
         <div class="row">
             <!-- Cột trái: Đọc File Excel và Danh sách Excel -->
             <div class="col-12 col-md-6">
@@ -135,7 +159,6 @@
                             @endforeach
                         </ul>
 
-                        <!-- Hiển thị danh sách trường -->
                         @if (session('sheet_fields'))
                             @foreach (session('sheet_fields') as $fIndex => $sheets)
                                 @foreach ($sheets as $sIndex => $sheetData)
@@ -215,30 +238,43 @@
                             @endforeach
                         </ul>
 
-                        <!-- Nút hiện danh sách mapping -->
                         <button type="button" class="btn btn-primary btn-sm mapping-toggle-btn" data-target="mapping-list">Hiện Danh Sách Mapping</button>
 
-                        <!-- Danh sách mapping -->
                         <div class="mapping-list hidden" id="mapping-list">
                             @if (session('mappings') && !empty(session('mappings')))
                                 <h4 class="section-title">Danh sách Mapping Trường-Biến</h4>
                                 @foreach (session('mappings') as $index => $mapping)
-                                    <div class="mapping-item">
-                                        <strong>{{ $index + 1 }}. </strong>
-                                        <div class="mapping-file-info">
-                                            ({{ $excelFiles[$mapping['field']['file_index']]['name'] }}/{{ session('sheet_fields')[$mapping['field']['file_index']][$mapping['field']['sheet_index']]['sheet_name'] }}) ->
-                                            ({{ $docFiles[$mapping['doc_index']]['name'] }})
+                                    @php
+                                        $isValidMapping = isset($mapping['field']['file_index']) &&
+                                                          isset($mapping['field']['sheet_index']) &&
+                                                          isset($mapping['field']['field']) &&
+                                                          isset($mapping['doc_index']) &&
+                                                          isset($mapping['variable']) &&
+                                                          isset($excelFiles[$mapping['field']['file_index']]['name']) &&
+                                                          isset($docFiles[$mapping['doc_index']]['name']) &&
+                                                          isset(session('sheet_fields')[$mapping['field']['file_index']][$mapping['field']['sheet_index']]['sheet_name']);
+                                    @endphp
+                                    @if ($isValidMapping)
+                                        <div class="mapping-item">
+                                            <strong>{{ $index + 1 }}. </strong>
+                                            <div class="mapping-file-info">
+                                                ({{ $excelFiles[$mapping['field']['file_index']]['name'] }}/{{ session('sheet_fields')[$mapping['field']['file_index']][$mapping['field']['sheet_index']]['sheet_name'] }}) ->
+                                                ({{ $docFiles[$mapping['doc_index']]['name'] }})
+                                            </div>
+                                            <div>
+                                                <span class="mapping-field">{{ $mapping['field']['field'] }}</span> ->
+                                                <span class="mapping-variable">{{ $mapping['variable'] }}</span>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <span class="mapping-field">{{ $mapping['field']['field'] }}</span> ->
-                                            <span class="mapping-variable">{{ $mapping['variable'] }}</span>
-                                        </div>
-                                    </div>
+                                    @else
+                                        <p class="text-danger">Lỗi: Dữ liệu mapping không hợp lệ tại chỉ số {{ $index }}</p>
+                                    @endif
                                 @endforeach
+                            @else
+                                <p>Chưa có mapping nào được thiết lập.</p>
                             @endif
                         </div>
 
-                        <!-- Hiển thị danh sách biến -->
                         @if (session('doc_variables'))
                             @foreach (session('doc_variables') as $dIndex => $docData)
                                 <div class="variable-section">
@@ -253,7 +289,6 @@
                                             @foreach ($docData['variables'] as $variable)
                                                 <li class="variable-item">
                                                     <span>{{ $variable }}
-                                                        <!-- Hiển thị trường đã mapping -->
                                                         @php
                                                             $mappings = session('mappings', []);
                                                             $mappedField = collect($mappings)->firstWhere(fn($m) => $m['doc_index'] == $dIndex && $m['variable'] == $variable);
@@ -279,11 +314,17 @@
                                                                 @foreach (session('sheet_fields') as $fIndex => $sheets)
                                                                     @foreach ($sheets as $sIndex => $sFields)
                                                                         <li class="dropdown-header">
-                                                                            {{ $excelFiles[$fIndex]['name'] }}/{{ $sFields['sheet_name'] }}
+                                                                            {{ $excelFiles[$fIndex]['name'] ?? 'Unknown File' }}/{{ $sFields['sheet_name'] }}
                                                                         </li>
                                                                         @foreach ($sFields['fields'] as $field)
                                                                             @php
-                                                                                $isFieldUsed = collect($mappings)->contains(fn($m) => $m['field']['file_index'] == $fIndex && $m['field']['sheet_index'] == $sIndex && $m['field']['field'] == $field);
+                                                                                // Chỉ vô hiệu hóa trường nếu nó đã được mapping trong cùng doc_index
+                                                                                $isFieldUsed = collect($mappings)->contains(fn($m) => 
+                                                                                    $m['doc_index'] == $dIndex && 
+                                                                                    $m['field']['file_index'] == $fIndex && 
+                                                                                    $m['field']['sheet_index'] == $sIndex && 
+                                                                                    $m['field']['field'] == $field
+                                                                                );
                                                                             @endphp
                                                                             <li>
                                                                                 <form action="{{ route('doc.mapVariable') }}" method="POST">
@@ -294,7 +335,7 @@
                                                                                     <input type="hidden" name="sheet_index" value="{{ $sIndex }}">
                                                                                     <input type="hidden" name="field" value="{{ $field }}">
                                                                                     <button type="submit" class="dropdown-item" {{ $isFieldUsed ? 'disabled' : '' }}>
-                                                                                        {{ $field }}
+                                                                                        {{ $field }} {{ $isFieldUsed ? '(Đã sử dụng trong Doc này)' : '' }}
                                                                                     </button>
                                                                                 </form>
                                                                             </li>
@@ -316,7 +357,6 @@
             </div>
         </div>
 
-        <!-- Thông báo -->
         @if (session()->has('error'))
             <div class="row mt-3">
                 <div class="col-12">
@@ -337,7 +377,6 @@
             </div>
         @endif
 
-        <!-- Dữ liệu Excel -->
         @if (isset($data) && !empty($data))
             <div class="row mt-4">
                 <div class="col-12">
@@ -374,7 +413,6 @@
             </div>
         @endif
 
-        <!-- Nội dung Doc -->
         @if (isset($docContent))
             <div class="row mt-4">
                 <div class="col-12">
@@ -388,13 +426,10 @@
     </div>
 
     <script>
-        // Xử lý toggle ẩn/hiện danh sách sheet, Doc và mapping
         document.querySelectorAll('.toggle-btn').forEach(button => {
             const targetId = button.getAttribute('data-target');
             const target = document.getElementById(targetId);
             const icon = button.querySelector('i');
-
-            // Khôi phục trạng thái từ localStorage
             const isExpanded = localStorage.getItem(`toggle-${targetId}`) === 'true';
             if (isExpanded) {
                 target.classList.remove('hidden');
@@ -405,8 +440,6 @@
                 icon.classList.remove('bi-chevron-up');
                 icon.classList.add('bi-chevron-down');
             }
-
-            // Xử lý toggle
             button.addEventListener('click', () => {
                 const isHidden = target.classList.contains('hidden');
                 if (isHidden) {
@@ -422,8 +455,6 @@
                 }
             });
         });
-
-        // Toggle danh sách mapping
         document.querySelectorAll('.mapping-toggle-btn').forEach(button => {
             button.addEventListener('click', () => {
                 const target = document.getElementById('mapping-list');

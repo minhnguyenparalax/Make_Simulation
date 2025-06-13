@@ -56,6 +56,9 @@ class DocController extends Controller
 
         $docIndex = $request->input('doc_index');
         $docFiles = session('doc_files', []);
+        $docVariables = session('doc_variables', []);
+        $mappings = session('mappings', []);
+        $generatedDocFiles = session('generated_doc_files', []);
 
         if (!isset($docFiles[$docIndex])) {
             return back()->with('error', 'File không tồn tại trong danh sách.');
@@ -65,7 +68,20 @@ class DocController extends Controller
         unset($docFiles[$docIndex]);
         $docFiles = array_values($docFiles);
 
-        session(['doc_files' => $docFiles]);
+        // Xóa các biến liên quan
+        unset($docVariables[$docIndex]);
+        // Xóa các mapping liên quan
+        $mappings = array_filter($mappings, fn($mapping) => $mapping['doc_index'] != $docIndex);
+        $mappings = array_values($mappings);
+        // Xóa các file Doc đã tạo
+        unset($generatedDocFiles[$docIndex]);
+
+        session([
+            'doc_files' => $docFiles,
+            'doc_variables' => $docVariables,
+            'mappings' => $mappings,
+            'generated_doc_files' => $generatedDocFiles
+        ]);
 
         return redirect()->route('file.index')->with('success', 'Đã xóa file Doc: ' . $filePath);
     }
@@ -90,7 +106,6 @@ class DocController extends Controller
 
             foreach ($phpWord->getSections() as $section) {
                 foreach ($section->getElements() as $element) {
-                    // Xử lý TextRun
                     if ($element instanceof TextRun) {
                         $paraStyle = $element->getParagraphStyle();
                         $alignment = $this->getAlignment($paraStyle);
@@ -112,9 +127,7 @@ class DocController extends Controller
                             }
                         }
                         $content .= '</p>';
-                    }
-                    // Xử lý Table
-                    elseif ($element instanceof Table) {
+                    } elseif ($element instanceof Table) {
                         $content .= '<table class="table table-bordered">';
                         foreach ($element->getRows() as $row) {
                             $content .= '<tr>';
@@ -149,9 +162,7 @@ class DocController extends Controller
                             $content .= '</tr>';
                         }
                         $content .= '</table>';
-                    }
-                    // Xử lý Paragraph
-                    elseif (method_exists($element, 'getParagraphStyle')) {
+                    } elseif (method_exists($element, 'getParagraphStyle')) {
                         $paraStyle = $element->getParagraphStyle();
                         $alignment = $this->getAlignment($paraStyle);
                         $content .= "<p style=\"text-align: $alignment;\">";
@@ -187,15 +198,13 @@ class DocController extends Controller
     {
         if ($paraStyle instanceof \PhpOffice\PhpWord\Style\Paragraph) {
             $alignment = $paraStyle->getAlignment();
-            // Sử dụng giá trị chuỗi trực tiếp
             switch ($alignment) {
                 case 'center':
                     return 'center';
                 case 'right':
                     return 'right';
                 case 'justify':
-                    return 'justify';
-                case 'both': // Trong một số trường hợp, 'both' tương đương 'justify'
+                case 'both':
                     return 'justify';
                 default:
                     return 'left';

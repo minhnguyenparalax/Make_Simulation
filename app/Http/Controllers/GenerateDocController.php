@@ -1,38 +1,31 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
-use PhpOffice\PhpWord\IOFactory as WordIOFactory;
-use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\TemplateProcessor;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class GenerateDocController extends Controller
 {
     public function setPrimaryKey(Request $request)
     {
+        $request->validate([
+            'doc_index' => 'required|integer',
+            'variable' => 'required|string',
+        ]);
+
         $docIndex = $request->input('doc_index');
         $variable = $request->input('variable');
-
-        $docFiles = session('doc_files', []);
         $docVariables = session('doc_variables', []);
 
-        if (!isset($docFiles[$docIndex]) || !isset($docVariables[$docIndex])) {
-            return redirect()->route('file.index')->with('error', 'File hoặc danh sách biến không tồn tại.');
+        if (isset($docVariables[$docIndex])) {
+            $docVariables[$docIndex]['primary_key'] = $variable;
+            session(['doc_variables' => $docVariables]);
+            return redirect()->route('file.index')->with('success', 'Đã đặt khóa chính cho biến: ' . $variable);
         }
 
-        // Kiểm tra biến có tồn tại trong danh sách biến của Doc
-        if (!in_array($variable, $docVariables[$docIndex]['variables'])) {
-            return redirect()->route('file.index')->with('error', 'Biến không tồn tại trong file Doc.');
-        }
-
-        // Cập nhật khóa chính trong session
-        $docVariables[$docIndex]['primary_key'] = $variable;
-        session(['doc_variables' => $docVariables]);
-
-        return redirect()->route('file.index')->with('success', 'Đã đặt biến "' . $variable . '" làm khóa chính cho file "' . $docFiles[$docIndex]['name'] . '".');
+        return redirect()->route('file.index')->with('error', 'Không tìm thấy tài liệu.');
     }
 
     public function setOutputFolder(Request $request)
@@ -42,209 +35,127 @@ class GenerateDocController extends Controller
         ]);
 
         $outputFolder = trim($request->input('output_folder'), '"\'');
-        $outputFolder = str_replace('/', DIRECTORY_SEPARATOR, $outputFolder);
+        $outputFolder = str_replace('/', '\\', $outputFolder);
 
         if (!is_dir($outputFolder)) {
             return redirect()->route('file.index')->with('error', 'Thư mục đầu ra không tồn tại: ' . $outputFolder);
         }
 
         session(['output_folder' => $outputFolder]);
-
         return redirect()->route('file.index')->with('success', 'Đã đặt thư mục đầu ra: ' . $outputFolder);
     }
 
-    public function generateDoc(Request $request, $docIndex)
+    public function generateDoc($docIndex)
     {
         $docFiles = session('doc_files', []);
-        $excelFiles = session('excel_files', []);
-        $mappings = session('mappings', []);
         $docVariables = session('doc_variables', []);
+        $mappings = session('mappings', []);
+        $excelFiles = session('excel_files', []);
         $outputFolder = session('output_folder');
 
-        // Kiểm tra file và biến
-        if (!isset($docFiles[$docIndex])) {
-            return redirect()->route('file.index')->with('error', 'File Doc không tồn tại.');
-        }
-        if (!isset($docVariables[$docIndex]['primary_key'])) {
-            return redirect()->route('file.index')->with('error', 'Chưa đặt khóa chính cho file Doc.');
-        }
-        if (empty($outputFolder) || !is_dir($outputFolder)) {
-            return redirect()->route('file.index')->with('error', 'Chưa đặt thư mục đầu ra hoặc thư mục không tồn tại.');
+        if (!isset($docFiles[$docIndex]) || !isset($docVariables[$docIndex])) {
+            return redirect()->route('file.index')->with('error', 'Tài liệu không tồn tại.');
         }
 
-        $primaryKey = $docVariables[$docIndex]['primary_key'];
-
-        // Tìm mapping của biến khóa chính
-        $primaryMapping = collect($mappings)->firstWhere(function ($mapping) use ($docIndex, $primaryKey) {
-            return $mapping['doc_index'] == $docIndex && $mapping['variable'] == $primaryKey;
-        });
-
-        if (!$primaryMapping) {
-            return redirect()->route('file.index')->with('error', 'Biến khóa chính "' . $primaryKey . '" chưa được mapping.');
+        if (!$outputFolder || !is_dir($outputFolder)) {
+            return redirect()->route('file.index')->with('error', 'Thư mục đầu ra chưa được thiết lập hoặc không tồn tại.');
         }
 
-        $fileIndex = $primaryMapping['field']['file_index'];
-        $sheetIndex = $primaryMapping['field']['sheet_index'];
-        $field = $primaryMapping['field']['field'];
-
-        if (!isset($excelFiles[$fileIndex])) {
-            return redirect()->route('file.index')->with('error', 'File Excel không tồn tại.');
-        }
-
-        $filePath = $excelFiles[$fileIndex]['path'];
-        if (!file_exists($filePath)) {
-            return redirect()->route('file.index')->with('error', 'File Excel không tồn tại tại: ' . $filePath);
+        $docPath = $docFiles[$docIndex]['path'];
+        if (!file_exists($docPath)) {
+            return redirect()->route('file.index')->with('error', 'File tài liệu không tồn tại tại: ' . $docPath);
         }
 
         try {
-            // Đọc file Excel
-            $spreadsheet = SpreadsheetIOFactory::load($filePath);
+            $primaryKey = $docVariables[$docIndex]['primary_key'] ?? null;
+            $relevantMappings = array_filter($mappings, fn($m) => $m['doc_index'] == $docIndex);
+
+            if (empty($relevantMappings)) {
+                return redirect()->route('file.index')->with('error', 'Không có mapping nào cho tài liệu này.');
+            }
+
+            $fileIndex = null;
+            $sheetIndex = null;
+            foreach ($relevantMappings as $mapping) {
+                $fileIndex = $mapping['field']['file_index'];
+                $sheetIndex = $mapping['field']['sheet_index'];
+                break;
+            }
+
+            if (!isset($excelFiles[$fileIndex]) || !file_exists($excelFiles[$fileIndex]['path'])) {
+                return redirect()->route('file.index')->with('error', 'File Excel không tồn tại.');
+            }
+
+            $spreadsheet = IOFactory::load($excelFiles[$fileIndex]['path']);
             $worksheet = $spreadsheet->getSheet($sheetIndex);
             $highestRow = $worksheet->getHighestRow();
             $highestColumn = $worksheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
-            // Tìm cột của trường khóa chính
-            $fieldColumnIndex = null;
+            $headerRow = [];
             for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                $cell = $worksheet->getCellByColumnAndRow($col, 1);
-                if ($cell->getCalculatedValue() === $field) {
-                    $fieldColumnIndex = $col;
-                    break;
+                $value = $worksheet->getCellByColumnAndRow($col, 1)->getCalculatedValue();
+                $headerRow[$col] = $value ? trim($value) : '';
+            }
+
+            $primaryKeyCol = null;
+            if ($primaryKey) {
+                foreach ($relevantMappings as $mapping) {
+                    if ($mapping['variable'] === $primaryKey) {
+                        $fieldName = $mapping['field']['field'];
+                        $primaryKeyCol = array_search($fieldName, $headerRow);
+                        break;
+                    }
                 }
             }
 
-            if ($fieldColumnIndex === null) {
-                return redirect()->route('file.index')->with('error', 'Không tìm thấy trường "' . $field . '" trong sheet.');
+            if ($primaryKey && $primaryKeyCol === null) {
+                return redirect()->route('file.index')->with('error', 'Không tìm thấy cột khóa chính trong file Excel.');
             }
 
-            // Đọc giá trị từ cột khóa chính
-            $values = [];
+            $generatedDocs = session('generated_doc_files', []);
+            $docCount = count($generatedDocs[$docIndex] ?? []) + 1;
+
             for ($row = 2; $row <= $highestRow; $row++) {
-                $cell = $worksheet->getCellByColumnAndRow($fieldColumnIndex, $row);
-                $value = $cell->getCalculatedValue();
-                if (!is_null($value) && trim($value) !== '') {
-                    $values[] = $value;
-                }
-            }
-
-            if (empty($values)) {
-                return redirect()->route('file.index')->with('error', 'Không tìm thấy giá trị hợp lệ trong cột "' . $field . '".');
-            }
-
-            // Đọc file Doc gốc
-            $docPath = $docFiles[$docIndex]['path'];
-            $phpWord = WordIOFactory::load($docPath, 'Word2007');
-            $generatedDocs = [];
-
-            // Tạo file Doc mới cho mỗi giá trị
-            foreach ($values as $index => $value) {
-                $newPhpWord = new PhpWord();
-                foreach ($phpWord->getSections() as $section) {
-                    $newSection = $newPhpWord->addSection($section->getStyle());
-                    foreach ($section->getElements() as $element) {
-                        if ($element instanceof \PhpOffice\PhpWord\Element\TextRun) {
-                            $newTextRun = $newSection->addTextRun($element->getParagraphStyle());
-                            foreach ($element->getElements() as $subElement) {
-                                if ($subElement instanceof \PhpOffice\PhpWord\Element\Text) {
-                                    $text = $subElement->getText();
-                                    $fontStyle = $subElement->getFontStyle();
-                                    // Thay thế biến khóa chính
-                                    $newText = str_replace('{{' . $primaryKey . '}}', $value, $text);
-                                    // Thay thế các biến khác
-                                    foreach ($mappings as $mapping) {
-                                        if ($mapping['doc_index'] == $docIndex) {
-                                            $newText = str_replace('{{' . $mapping['variable'] . '}}', $this->getFieldValue($excelFiles, $mapping, $row - 1, $worksheet), $newText);
-                                        }
-                                    }
-                                    $newTextRun->addText($newText, $fontStyle);
-                                } else {
-                                    $newSection->addElement($subElement);
-                                }
-                            }
-                        } elseif ($element instanceof \PhpOffice\PhpWord\Element\Table) {
-                            $newTable = $newSection->addTable($element->getStyle());
-                            foreach ($element->getRows() as $row) {
-                                $newRow = $newTable->addRow();
-                                foreach ($row->getCells() as $cell) {
-                                    $newCell = $newRow->addCell($cell->getWidth(), $cell->getStyle());
-                                    foreach ($cell->getElements() as $cellElement) {
-                                        if ($cellElement instanceof \PhpOffice\PhpWord\Element\TextRun) {
-                                            $newTextRun = $newCell->addTextRun($cellElement->getParagraphStyle());
-                                            foreach ($cellElement->getElements() as $subElement) {
-                                                if ($subElement instanceof \PhpOffice\PhpWord\Element\Text) {
-                                                    $text = $subElement->getText();
-                                                    $fontStyle = $subElement->getFontStyle();
-                                                    $newText = str_replace('{{' . $primaryKey . '}}', $value, $text);
-                                                    foreach ($mappings as $mapping) {
-                                                        if ($mapping['doc_index'] == $docIndex) {
-                                                            $newText = str_replace('{{' . $mapping['variable'] . '}}', $this->getFieldValue($excelFiles, $mapping, $row - 1, $worksheet), $newText);
-                                                        }
-                                                    }
-                                                    $newTextRun->addText($newText, $fontStyle);
-                                                } else {
-                                                    $newCell->addElement($subElement);
-                                                }
-                                            }
-                                        } else {
-                                            $newCell->addElement($cellElement);
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            $newSection->addElement($element);
-                        }
+                $rowData = [];
+                $primaryKeyValue = null;
+                for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                    $value = $worksheet->getCellByColumnAndRow($col, $row)->getCalculatedValue();
+                    $rowData[$headerRow[$col]] = $value ? trim($value) : '';
+                    if ($col === $primaryKeyCol) {
+                        $primaryKeyValue = $rowData[$headerRow[$col]];
                     }
                 }
 
-                // Lưu file tạm vào session
-                $filename = pathinfo($docFiles[$docIndex]['name'], PATHINFO_FILENAME) . '_' . ($index + 1) . '.docx';
-                $tempPath = storage_path('app/temp/' . $filename);
-                $writer = WordIOFactory::createWriter($newPhpWord, 'Word2007');
-                $writer->save($tempPath);
+                if ($primaryKey && empty($primaryKeyValue)) {
+                    continue;
+                }
 
-                $generatedDocs[] = [
-                    'filename' => $filename,
-                    'path' => $tempPath,
+                $templateProcessor = new TemplateProcessor($docPath);
+                foreach ($relevantMappings as $mapping) {
+                    $fieldName = $mapping['field']['field'];
+                    $variable = $mapping['variable'];
+                    $value = $rowData[$fieldName] ?? '';
+                    $templateProcessor->setValue($variable, $value);
+                }
+
+                $outputFilename = basename($docPath, '.docx') . '_' . $docCount . '.docx';
+                $outputPath = rtrim($outputFolder, '\\') . '\\' . $outputFilename;
+                $templateProcessor->saveAs($outputPath);
+
+                $generatedDocs[$docIndex][] = [
+                    'filename' => $outputFilename,
+                    'path' => $outputPath
                 ];
+                $docCount++;
             }
 
-            // Lưu file ra thư mục đầu ra
-            foreach ($generatedDocs as $doc) {
-                $destinationPath = rtrim($outputFolder, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $doc['filename'];
-                copy($doc['path'], $destinationPath);
-            }
-
-            // Lưu danh sách file đã tạo vào session
-            $generatedDocFiles = session('generated_doc_files', []);
-            $generatedDocFiles[$docIndex] = $generatedDocs;
-            session(['generated_doc_files' => $generatedDocFiles]);
-
-            return redirect()->route('file.index')->with('success', 'Đã tạo ' . count($generatedDocs) . ' file Doc mới từ "' . $docFiles[$docIndex]['name'] . '" và lưu vào "' . $outputFolder . '".');
+            session(['generated_doc_files' => $generatedDocs]);
+            return redirect()->route('file.index')->with('success', 'Đã tạo các file tài liệu thành công.');
 
         } catch (\Exception $e) {
-            Log::error('Lỗi khi tạo file Doc: ' . $e->getMessage());
-            return redirect()->route('file.index')->with('error', 'Không thể tạo file Doc: ' . $e->getMessage());
+            Log::error('Lỗi khi tạo document: ' . $e->getMessage());
+            return redirect()->route('file.index')->with('error', 'Không thể tạo tài liệu: ' . $e->getMessage());
         }
-    }
-
-    private function getFieldValue($excelFiles, $mapping, $rowIndex, $worksheet)
-    {
-        $fileIndex = $mapping['field']['file_index'];
-        $sheetIndex = $mapping['field']['sheet_index'];
-        $field = $mapping['field']['field'];
-
-        $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($worksheet->getHighestColumn());
-
-        for ($col = 1; $col <= $highestColumnIndex; $col++) {
-            $cell = $worksheet->getCellByColumnAndRow($col, 1);
-            if ($cell->getCalculatedValue() === $field) {
-                $cellValue = $worksheet->getCellByColumnAndRow($col, $rowIndex + 2)->getCalculatedValue();
-                return is_null($cellValue) ? '' : $cellValue;
-            }
-        }
-
-        return '';
     }
 }

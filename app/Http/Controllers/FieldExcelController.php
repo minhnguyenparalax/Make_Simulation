@@ -33,7 +33,6 @@ class FieldExcelController extends Controller
             $highestColumn = $worksheet->getHighestColumn();
             $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
-            // Lấy header (row 1)
             $fields = [];
             for ($col = 1; $col <= $highestColumnIndex; $col++) {
                 $cell = $worksheet->getCellByColumnAndRow($col, 1);
@@ -43,7 +42,6 @@ class FieldExcelController extends Controller
                 }
             }
 
-            // Lưu fields vào session
             $sheetFields = session('sheet_fields', []);
             $sheetFields[$fileIndex][$sheetIndex] = [
                 'sheet_name' => $sheetNames[$sheetIndex],
@@ -62,13 +60,25 @@ class FieldExcelController extends Controller
     public function removeFields($fileIndex, $sheetIndex)
     {
         $sheetFields = session('sheet_fields', []);
+        $mappings = session('mappings', []);
 
         if (isset($sheetFields[$fileIndex][$sheetIndex])) {
             unset($sheetFields[$fileIndex][$sheetIndex]);
             if (empty($sheetFields[$fileIndex])) {
                 unset($sheetFields[$fileIndex]);
             }
-            session(['sheet_fields' => $sheetFields]);
+            // Xóa các mapping liên quan
+            $mappings = array_filter($mappings, fn($mapping) => 
+                $mapping['field']['file_index'] != $fileIndex || 
+                $mapping['field']['sheet_index'] != $sheetIndex
+            );
+            $mappings = array_values($mappings);
+
+            session([
+                'sheet_fields' => $sheetFields,
+                'mappings' => $mappings
+            ]);
+
             return redirect()->route('file.index')->with('success', 'Đã xóa danh sách trường của sheet.');
         }
 

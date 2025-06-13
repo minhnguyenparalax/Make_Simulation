@@ -7,6 +7,7 @@ use App\Http\Controllers\FieldExcelController;
 use App\Http\Controllers\VariablesDocController;
 use App\Http\Controllers\FieldMappingController;
 use App\Http\Controllers\GenerateDocController;
+use App\Http\Controllers\FileController;
 
 Route::get('/', function () {
     return view('file_reader', [
@@ -31,7 +32,8 @@ Route::get('/doc/variables/remove/{docIndex}', [VariablesDocController::class, '
 Route::post('/doc/map-variable', [FieldMappingController::class, 'mapVariable'])->name('doc.mapVariable');
 Route::post('/doc/remove-mapping', [FieldMappingController::class, 'removeMapping'])->name('doc.removeMapping');
 
-//Generate
 Route::post('/doc/set-primary-key', [GenerateDocController::class, 'setPrimaryKey'])->name('doc.setPrimaryKey');
 Route::post('/doc/set-output-folder', [GenerateDocController::class, 'setOutputFolder'])->name('doc.setOutputFolder');
 Route::get('/doc/generate/{docIndex}', [GenerateDocController::class, 'generateDoc'])->name('doc.generate');
+
+Route::get('/clear-session', [FileController::class, 'clearSession'])->name('clear.session');

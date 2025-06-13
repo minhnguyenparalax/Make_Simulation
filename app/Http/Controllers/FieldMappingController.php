@@ -8,6 +8,14 @@ class FieldMappingController extends Controller
 {
     public function mapVariable(Request $request)
     {
+        $request->validate([
+            'doc_index' => 'required|integer|min:0',
+            'variable' => 'required|string',
+            'file_index' => 'required|integer|min:0',
+            'sheet_index' => 'required|integer|min:0',
+            'field' => 'required|string',
+        ]);
+
         $docIndex = $request->input('doc_index');
         $variable = $request->input('variable');
         $fileIndex = $request->input('file_index');
@@ -16,26 +24,29 @@ class FieldMappingController extends Controller
 
         $docFiles = session('doc_files', []);
         $excelFiles = session('excel_files', []);
+        $sheetFields = session('sheet_fields', []);
 
-        // Kiểm tra file tồn tại
-        if (!isset($docFiles[$docIndex]) || !isset($excelFiles[$fileIndex])) {
-            return redirect()->back()->with('error', 'File không tồn tại.');
+        // Kiểm tra file và sheet tồn tại
+        if (!isset($docFiles[$docIndex])) {
+            return redirect()->back()->with('error', 'File Doc không tồn tại.');
+        }
+        if (!isset($excelFiles[$fileIndex])) {
+            return redirect()->back()->with('error', 'File Excel không tồn tại.');
+        }
+        if (!isset($sheetFields[$fileIndex][$sheetIndex])) {
+            return redirect()->back()->with('error', 'Danh sách trường của sheet không tồn tại.');
+        }
+        // Kiểm tra field tồn tại trong danh sách trường
+        if (!in_array($field, $sheetFields[$fileIndex][$sheetIndex]['fields'])) {
+            return redirect()->back()->with('error', 'Trường "' . $field . '" không tồn tại trong sheet.');
         }
 
         $mappings = session('mappings', []);
 
-        // Kiểm tra 1:1 trong phạm vi cùng doc_index
+        // Kiểm tra biến đã được mapping trong cùng doc_index
         foreach ($mappings as $mapping) {
-            // Kiểm tra biến đã được mapping trong cùng doc_index
             if ($mapping['doc_index'] == $docIndex && $mapping['variable'] == $variable) {
                 return redirect()->back()->with('error', 'Biến "' . $variable . '" đã được mapping trong báo cáo "' . $docFiles[$docIndex]['name'] . '".');
-            }
-            // Kiểm tra trường đã được mapping trong cùng doc_index
-            if ($mapping['doc_index'] == $docIndex &&
-                $mapping['field']['file_index'] == $fileIndex && 
-                $mapping['field']['sheet_index'] == $sheetIndex && 
-                $mapping['field']['field'] == $field) {
-                return redirect()->back()->with('error', 'Trường "' . $field . '" đã được mapping trong báo cáo "' . $docFiles[$docIndex]['name'] . '".');
             }
         }
 
@@ -56,18 +67,21 @@ class FieldMappingController extends Controller
 
     public function removeMapping(Request $request)
     {
+        $request->validate([
+            'doc_index' => 'required|integer|min:0',
+            'variable' => 'required|string',
+        ]);
+
         $docIndex = $request->input('doc_index');
         $variable = $request->input('variable');
 
         $docFiles = session('doc_files', []);
         $mappings = session('mappings', []);
 
-        // Kiểm tra file tồn tại
         if (!isset($docFiles[$docIndex])) {
             return redirect()->back()->with('error', 'File không tồn tại.');
         }
 
-        // Lọc xóa mapping
         $mappings = array_filter($mappings, fn($mapping) => 
             !($mapping['doc_index'] == $docIndex && $mapping['variable'] == $variable)
         );

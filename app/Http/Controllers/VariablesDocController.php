@@ -88,7 +88,7 @@ class VariablesDocController extends Controller
             $docVariables[$docIndex] = [
                 'doc_name' => $docFiles[$docIndex]['name'],
                 'variables' => $variables,
-                'primary_key' => null, // Khởi tạo khóa chính là null
+                'primary_key' => null,
             ];
             session(['doc_variables' => $docVariables]);
 
@@ -105,18 +105,16 @@ class VariablesDocController extends Controller
         $mappings = session('mappings', []);
 
         if (isset($docVariables[$docIndex])) {
-            // Xóa các mapping liên quan đến doc này
             $mappings = array_filter($mappings, fn($mapping) => $mapping['doc_index'] != $docIndex);
-            session(['mappings' => $mappings]);
-
-            // Xóa danh sách biến và khóa chính
             unset($docVariables[$docIndex]);
-            session(['doc_variables' => $docVariables]);
-
-            // Xóa danh sách file Doc đã tạo (nếu có)
             $generatedDocFiles = session('generated_doc_files', []);
             unset($generatedDocFiles[$docIndex]);
-            session(['generated_doc_files' => $generatedDocFiles]);
+
+            session([
+                'mappings' => array_values($mappings),
+                'doc_variables' => $docVariables,
+                'generated_doc_files' => $generatedDocFiles
+            ]);
 
             return redirect()->back()->with('success', 'Đã xóa danh sách biến và khóa chính của file.');
         }
