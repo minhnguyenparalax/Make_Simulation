@@ -74,7 +74,7 @@
 </head>
 <body>
     <div class="container mt-4">
-        <!-- Debug Data (có thể xóa sau khi debug xong) -->
+        <!-- Debug Data (chỉ bật khi debug) -->
         @if (false)
             @if (!empty($excelFiles))
                 <pre>Excel Files: {{ print_r($excelFiles, true) }}</pre>
@@ -172,10 +172,11 @@
                                             <table class="table table-bordered fields-table">
                                                 <thead>
                                                     <tr>
-                                                        @foreach ($sheetData['fields'] as $field)
-                                                            <th>{{ $field }}</th>
-                                                        @endforeach
-                                                        @if (empty($sheetData['fields']))
+                                                        @if (!empty($sheetData['fields']))
+                                                            @foreach ($sheetData['fields'] as $field)
+                                                                <th>{{ $field }}</th>
+                                                            @endforeach
+                                                        @else
                                                             <th>Chưa có trường nào</th>
                                                         @endif
                                                     </tr>
@@ -253,13 +254,14 @@
                                                           isset($mapping['doc_index']) &&
                                                           isset($mapping['variable']) &&
                                                           isset($excelFiles[$mapping['field']['file_index']]['name']) &&
+                                                          isset($excelFiles[$mapping['field']['file_index']]['sheets'][$mapping['field']['sheet_index']]) &&
                                                           isset($docFiles[$mapping['doc_index']]['name']);
                                     @endphp
                                     @if ($isValidMapping)
                                         <div class="mapping-item">
                                             <strong>{{ $index + 1 }}. </strong>
                                             <div class="mapping-file-info">
-                                                ({{ $excelFiles[$mapping['field']['file_index']]['name'] }}/Sheet {{ $mapping['field']['sheet_index'] + 1 }}) ->
+                                                ({{ $excelFiles[$mapping['field']['file_index']]['name'] }}/{{ $excelFiles[$mapping['field']['file_index']]['sheets'][$mapping['field']['sheet_index']] }}) ->
                                                 ({{ $docFiles[$mapping['doc_index']]['name'] }})
                                             </div>
                                             <div>
@@ -359,7 +361,8 @@
             </div>
         </div>
 
-        @if (session()->has('error'))
+        <!-- Hiển thị thông báo lỗi -->
+        @if (session('error'))
             <div class="row mt-3">
                 <div class="col-12">
                     <div class="alert alert-danger">
@@ -369,7 +372,8 @@
             </div>
         @endif
 
-        @if (session()->has('success'))
+        <!-- Hiển thị thông báo thành công -->
+        @if (session('success'))
             <div class="row mt-3">
                 <div class="col-12">
                     <div class="alert alert-success">
@@ -379,6 +383,7 @@
             </div>
         @endif
 
+        <!-- Hiển thị dữ liệu Excel -->
         @if (isset($data) && !empty($data))
             <div class="row mt-4">
                 <div class="col-12">
@@ -415,6 +420,7 @@
             </div>
         @endif
 
+        <!-- Hiển thị nội dung Doc -->
         @if (isset($docContent))
             <div class="row mt-4">
                 <div class="col-12">
@@ -457,6 +463,7 @@
                 }
             });
         });
+
         document.querySelectorAll('.mapping-toggle-btn').forEach(button => {
             button.addEventListener('click', () => {
                 const target = document.getElementById('mapping-list');
